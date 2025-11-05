@@ -1,5 +1,7 @@
 package com.leeson.image_pickers.activitys;
 
+import android.app.Activity;
+import android.app.Application;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
@@ -7,6 +9,10 @@ import android.graphics.Bitmap;
 import android.media.ThumbnailUtils;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.util.Log;
+
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.leeson.image_pickers.AppPath;
 import com.leeson.image_pickers.R;
@@ -17,6 +23,8 @@ import com.leeson.image_pickers.utils.ImageCropEngine;
 import com.leeson.image_pickers.utils.MeSandboxFileEngine;
 import com.leeson.image_pickers.utils.PictureStyleUtil;
 import com.luck.picture.lib.basic.PictureSelector;
+import com.luck.picture.lib.basic.PictureSelectorSupporterActivity;
+import com.luck.picture.lib.basic.PictureSelectorTransparentActivity;
 import com.luck.picture.lib.config.PictureMimeType;
 import com.luck.picture.lib.config.SelectMimeType;
 import com.luck.picture.lib.config.SelectModeConfig;
@@ -72,7 +80,7 @@ public class SelectPicsActivity extends BaseActivity {
     public void onCreate(@androidx.annotation.Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_select_pics);
-
+        UIUtils.registerEdgeToEdgeAdaptation(getApplication());
         startSel();
     }
 
