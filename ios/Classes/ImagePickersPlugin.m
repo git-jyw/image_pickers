@@ -555,8 +555,15 @@ static NSString *const CHANNEL_NAME = @"flutter/image_pickers";
         [manager requestAVAssetForVideo:asset options:options resultHandler:^(AVAsset * _Nullable asset, AVAudioMix * _Nullable audioMix, NSDictionary * _Nullable info) {
             
             AVURLAsset *urlAsset = (AVURLAsset *)asset;
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                NSLog(@"%@",urlAsset.URL.absoluteString);
+            });
             NSURL *url = urlAsset.URL;
             NSString *subString = [url.absoluteString substringFromIndex:7];
+//            NSString *subString2 = [url.relativePath substringFromIndex:7];
+            if (@available(iOS 18, *)) {
+                subString = url.relativePath;
+            }
             
             NSString *name = [self getNewName];
             NSString  *jpgPath = [NSHomeDirectory()     stringByAppendingPathComponent:[NSString stringWithFormat:@"Documents/%@",name]];
@@ -564,9 +571,10 @@ static NSString *const CHANNEL_NAME = @"flutter/image_pickers";
             //保存到沙盒
             [UIImageJPEGRepresentation(img,1.0) writeToFile:jpgPath atomically:YES];
             NSString *aPath3=[NSString stringWithFormat:@"%@/Documents/%@",NSHomeDirectory(),name];
+            NSString *videoPath = [self copyVideoToSandbox:url];
             [arr addObject:@{
                 @"thumbPath":[NSString stringWithFormat:@"%@",aPath3],
-                @"path":[NSString stringWithFormat:@"%@",subString],
+                @"path":[NSString stringWithFormat:@"%@",videoPath],
             }];
             [self saveImageView:index imagePHAsset:modelList arr:arr  compressSize:compressSize result:result];
             
@@ -783,6 +791,54 @@ static NSString *const CHANNEL_NAME = @"flutter/image_pickers";
     int  x = arc4random() % 10000;
     NSString *name = [NSString stringWithFormat:@"%@%d",[formatter stringFromDate:[NSDate date]],x];
     return name;
+}
+#pragma mark - 视频文件复制到沙盒
+// 复制视频文件到应用沙盒目录
+- (NSString *)copyVideoToSandbox:(NSURL *)videoURL {
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    
+    // 获取应用沙盒 Documents 目录
+    NSString *documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+    
+    // 生成唯一文件名
+    NSString *fileName = [NSString stringWithFormat:@"video_%@.mp4", [self getNewName]];
+    NSString *destinationPath = [documentsPath stringByAppendingPathComponent:fileName];
+    
+    NSError *error = nil;
+    
+    // 检查源文件是否存在
+    if (![fileManager fileExistsAtPath:videoURL.path]) {
+        NSLog(@"源视频文件不存在: %@", videoURL.path);
+        return videoURL.path; // 如果源文件不存在，返回原始路径
+    }
+    
+    // 复制文件到沙盒
+    BOOL success = [fileManager copyItemAtPath:videoURL.path toPath:destinationPath error:&error];
+    
+    if (success) {
+        NSLog(@"视频文件复制成功: %@", destinationPath);
+        return destinationPath;
+    } else {
+        NSLog(@"视频文件复制失败: %@", error);
+        // 如果复制失败，返回原始路径作为备选
+        return videoURL.path;
+    }
+}
+
+// 清理临时视频文件（可选）
+- (void)cleanupVideoFiles {
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    NSString *documentsPath = [NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES) firstObject];
+    
+    NSError *error = nil;
+    NSArray *files = [fileManager contentsOfDirectoryAtPath:documentsPath error:&error];
+    
+    for (NSString *file in files) {
+        if ([file hasPrefix:@"video_"] && [file hasSuffix:@".mp4"]) {
+            NSString *filePath = [documentsPath stringByAppendingPathComponent:file];
+            [fileManager removeItemAtPath:filePath error:nil];
+        }
+    }
 }
 @end
 /*
