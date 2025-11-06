@@ -62,9 +62,9 @@ class ImagePickers {
       'showGif': true,
       'uiColor': {
         "a": 255,
-        "r": uiColor.r,
-        "g": uiColor.g,
-        "b": uiColor.b,
+        "r": uiColor.red,
+        "g": uiColor.green,
+        "b": uiColor.blue,
         "l": (uiColor.computeLuminance() * 255).toInt()
       },
       'selectCount': 1,
@@ -155,9 +155,9 @@ class ImagePickers {
       'showGif': showGif,
       'uiColor': {
         "a": 255,
-        "r": uiColor.r,
-        "g": uiColor.g,
-        "b": uiColor.b,
+        "r": uiColor.red,
+        "g": uiColor.green,
+        "b": uiColor.blue,
         "l": (uiColor.computeLuminance() * 255).toInt()
       },
       'selectCount': selectCount,
