@@ -249,7 +249,7 @@ public class SelectPicsActivity extends BaseActivity {
                     .isGif(showGif)
                     .setSelectMaxDurationSecond(videoSelectMaxSecond.intValue())
                     .setSelectMinDurationSecond(videoSelectMinSecond.intValue())
-                    .setFilterVideoMaxSecond(videoSelectMaxSecond.intValue())
+                    // .setFilterVideoMaxSecond(videoSelectMaxSecond.intValue())
                     .setFilterVideoMinSecond(videoSelectMinSecond.intValue())
                     .setMaxSelectNum(selectCount.intValue())
                     .setMaxVideoSelectNum(selectCount.intValue())
