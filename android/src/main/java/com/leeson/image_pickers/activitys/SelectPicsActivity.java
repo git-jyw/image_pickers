@@ -15,11 +15,14 @@ import android.util.Log;
 import android.util.DisplayMetrics;
 import android.view.View;
 import android.view.LayoutInflater;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
+import androidx.recyclerview.widget.RecyclerView;
+import androidx.constraintlayout.widget.ConstraintLayout;
 
 import com.leeson.image_pickers.AppPath;
 import com.leeson.image_pickers.R;
@@ -61,6 +64,7 @@ import android.provider.Settings;
 import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.ContextCompat;
 import android.widget.Button;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 
@@ -373,6 +377,11 @@ public class SelectPicsActivity extends BaseActivity {
                                 return;
                             }
 
+                            ViewGroup rootView = null;
+                            if (view instanceof ViewGroup) {
+                                rootView = (ViewGroup) view;
+                            }
+
                             int sdkInt = android.os.Build.VERSION.SDK_INT;
                             int targetSdk = android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE;
                             Log.d("getPickerPaths", "attachLifecycle onViewCreated sdkInt=" + sdkInt + ", UPSIDE_DOWN_CAKE=" + targetSdk);
@@ -402,41 +411,100 @@ public class SelectPicsActivity extends BaseActivity {
                             Log.d("getPickerPaths", "attachLifecycle onViewCreated: hasReadImages=" + hasReadImages + ", hasVisualSelected=" + hasVisualSelected);
 
                             if (!hasReadImages && hasVisualSelected) {
-                                Log.d("getPickerPaths", "attachLifecycle onViewCreated: limited photo access detected, showing custom tip dialog");
+                                Log.d("getPickerPaths", "attachLifecycle onViewCreated: limited photo access detected, adding top tip bar and showing custom tip dialog");
 
-                                AlertDialog dialog = new AlertDialog.Builder(fragment.requireActivity()).create();
-                                View dialogView = LayoutInflater.from(fragment.requireActivity())
-                                        .inflate(R.layout.ps_dialog_limited_photo_access, null, false);
+                                if (rootView != null) {
+                                    // 打印当前 Fragment 的 View 树结构，后续用于精确定位提示条插入位置
+                                    logViewTree(rootView, 0);
 
-                                TextView tvMessage = dialogView.findViewById(R.id.tv_message);
-                                Button btnNegative = dialogView.findViewById(R.id.btn_negative);
-                                Button btnPositive = dialogView.findViewById(R.id.btn_positive);
+                                    View existingTip = rootView.findViewById(R.id.ps_top_tip_bar_root);
+                                    if (existingTip == null) {
+                                        View tipBar = LayoutInflater.from(fragment.requireActivity())
+                                                .inflate(R.layout.ps_top_tip_bar, rootView, false);
 
-                                if (tvMessage != null) {
-                                    tvMessage.setText("无法访问相册中所有照片，请在系统设置中将「照片」权限改为「所有照片」");
+                                        if (rootView instanceof ConstraintLayout) {
+                                            ConstraintLayout cl = (ConstraintLayout) rootView;
+                                            View recycler = cl.findViewById(R.id.recycler);
+                                            View titleBar = cl.findViewById(R.id.title_bar);
+
+                                            if (recycler != null && titleBar != null) {
+                                                // 使用 XML 中定义的高度（例如 48dp/88dp），只补充约束信息
+                                                ConstraintLayout.LayoutParams lp = (ConstraintLayout.LayoutParams) tipBar.getLayoutParams();
+                                                lp.topToBottom = titleBar.getId();
+                                                lp.leftToLeft = ConstraintLayout.LayoutParams.PARENT_ID;
+                                                lp.rightToRight = ConstraintLayout.LayoutParams.PARENT_ID;
+                                                tipBar.setLayoutParams(lp);
+                                                cl.addView(tipBar);
+
+                                                // 点击整块提示条，跳转到应用设置页面，并关闭相册组件，返回空结果
+                                                tipBar.setOnClickListener(v -> {
+                                                    // 打开应用设置页
+                                                    Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                                                    intent.setData(Uri.fromParts("package", fragment.requireActivity().getPackageName(), null));
+                                                    fragment.requireActivity().startActivity(intent);
+
+                                                    // 关闭 PictureSelector 所在的 Activity
+                                                    fragment.requireActivity().finish();
+
+                                                    // 向 Flutter 返回一个空数组结果并关闭当前 SelectPicsActivity
+                                                    Intent resultIntent = new Intent();
+                                                    resultIntent.putExtra(COMPRESS_PATHS, new ArrayList<>());
+                                                    setResult(RESULT_OK, resultIntent);
+                                                    finish();
+                                                });
+
+                                                ViewGroup.LayoutParams recyclerLpRaw = recycler.getLayoutParams();
+                                                if (recyclerLpRaw instanceof ConstraintLayout.LayoutParams) {
+                                                    ConstraintLayout.LayoutParams recyclerLp = (ConstraintLayout.LayoutParams) recyclerLpRaw;
+                                                    if (recyclerLp.topToBottom == titleBar.getId()) {
+                                                        recyclerLp.topToBottom = tipBar.getId();
+                                                        recycler.setLayoutParams(recyclerLp);
+                                                    }
+                                                }
+                                            } else {
+                                                // 兜底：未找到特定锚点时，直接添加到根布局
+                                                rootView.addView(tipBar);
+                                            }
+                                        } else {
+                                            // 根布局不是 ConstraintLayout 时的兜底处理
+                                            rootView.addView(tipBar);
+                                        }
+                                    }
                                 }
 
-                                btnNegative.setOnClickListener(v -> dialog.dismiss());
-                                btnPositive.setOnClickListener(v -> {
-                                    dialog.dismiss();
-                                    Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-                                    intent.setData(Uri.fromParts("package", fragment.requireActivity().getPackageName(), null));
-                                    fragment.requireActivity().startActivity(intent);
-                                });
+                                // AlertDialog dialog = new AlertDialog.Builder(fragment.requireActivity()).create();
+                                // View dialogView = LayoutInflater.from(fragment.requireActivity())
+                                //         .inflate(R.layout.ps_dialog_limited_photo_access, null, false);
 
-                                dialog.setView(dialogView);
-                                if (dialog.getWindow() != null) {
-                                    dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-                                }
-                                dialog.show();
+                                // TextView tvMessage = dialogView.findViewById(R.id.tv_message);
+                                // Button btnNegative = dialogView.findViewById(R.id.btn_negative);
+                                // Button btnPositive = dialogView.findViewById(R.id.btn_positive);
 
-                                if (dialog.getWindow() != null) {
-                                    DisplayMetrics dm = new DisplayMetrics();
-                                    fragment.requireActivity().getWindowManager().getDefaultDisplay().getMetrics(dm);
-                                    WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
-                                    params.width = (int) (dm.widthPixels * 0.7f);
-                                    dialog.getWindow().setAttributes(params);
-                                }
+                                // if (tvMessage != null) {
+                                //     tvMessage.setText("无法访问相册中所有照片，请在系统设置中将「照片」权限改为「所有照片」");
+                                // }
+
+                                // btnNegative.setOnClickListener(v -> dialog.dismiss());
+                                // btnPositive.setOnClickListener(v -> {
+                                //     dialog.dismiss();
+                                //     Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                                //     intent.setData(Uri.fromParts("package", fragment.requireActivity().getPackageName(), null));
+                                //     fragment.requireActivity().startActivity(intent);
+                                // });
+
+                                // dialog.setView(dialogView);
+                                // if (dialog.getWindow() != null) {
+                                //     dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+                                // }
+                                // dialog.show();
+
+                                // if (dialog.getWindow() != null) {
+                                //     DisplayMetrics dm = new DisplayMetrics();
+                                //     fragment.requireActivity().getWindowManager().getDefaultDisplay().getMetrics(dm);
+                                //     WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
+                                //     params.width = (int) (dm.widthPixels * 0.7f);
+                                //     dialog.getWindow().setAttributes(params);
+                                // }
                             } else {
                                 Log.d("getPickerPaths", "attachLifecycle onViewCreated: condition NOT matched, no dialog. hasReadImages=" + hasReadImages + ", hasVisualSelected=" + hasVisualSelected);
                             }
@@ -464,6 +532,55 @@ public class SelectPicsActivity extends BaseActivity {
                     });
         }
 
+    }
+
+
+    private View findFirstRecyclerView(ViewGroup root) {
+        if (root instanceof RecyclerView) {
+            return root;
+        }
+
+        for (int i = 0; i < root.getChildCount(); i++) {
+            View child = root.getChildAt(i);
+            if (child instanceof RecyclerView) {
+                return child;
+            }
+            if (child instanceof ViewGroup) {
+                View result = findFirstRecyclerView((ViewGroup) child);
+                if (result != null) {
+                    return result;
+                }
+            }
+        }
+
+        return null;
+    }
+
+
+    private void logViewTree(View view, int depth) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < depth; i++) {
+            sb.append("--");
+        }
+        sb.append(view.getClass().getSimpleName());
+
+        int id = view.getId();
+        if (id != View.NO_ID) {
+            try {
+                String name = view.getResources().getResourceEntryName(id);
+                sb.append(" id=").append(name);
+            } catch (Exception ignore) {
+            }
+        }
+
+        Log.d("getPickerPaths", "viewTree: " + sb.toString());
+
+        if (view instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) view;
+            for (int i = 0; i < vg.getChildCount(); i++) {
+                logViewTree(vg.getChildAt(i), depth + 1);
+            }
+        }
     }
 
 
