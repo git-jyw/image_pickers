@@ -3,6 +3,7 @@ package com.leeson.image_pickers;
 import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Build;
 
 import com.leeson.image_pickers.activitys.PermissionActivity;
@@ -17,12 +18,14 @@ import java.util.List;
 import java.util.Map;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.PluginRegistry;
+import android.util.Log;
 
 /**
  * Created by lisen on 2019/10/16.
@@ -45,6 +48,10 @@ public class ImagePickersPlugin implements FlutterPlugin,MethodChannel.MethodCal
 
   private byte[] data;
 
+  // 记录是否已经通过 PermissionActivity 成功申请过一次媒体读取权限，
+  // 用于避免在 Android 13/14 的“部分照片访问”场景下重复弹出系统的“选择项目”界面。
+  private static boolean hasRequestedMediaPermissionOnce = false;
+
   public ImagePickersPlugin() {
   }
 
@@ -52,6 +59,7 @@ public class ImagePickersPlugin implements FlutterPlugin,MethodChannel.MethodCal
   private PluginRegistry.ActivityResultListener listener = new PluginRegistry.ActivityResultListener() {
     @Override
     public boolean onActivityResult(int requestCode, int resultCode, Intent intent) {
+      Log.d("getPickerPaths", "onActivityResult: requestCode=" + requestCode + ", resultCode=" + resultCode);
       if (requestCode == SELECT ) {
         if (resultCode == Activity.RESULT_OK){
           List<Map<String,String>> paths = (List<Map<String,String>>) intent.getSerializableExtra(SelectPicsActivity.COMPRESS_PATHS);
@@ -80,9 +88,14 @@ public class ImagePickersPlugin implements FlutterPlugin,MethodChannel.MethodCal
         }
       }else if (requestCode == READ_IMAGE){
         if (resultCode == Activity.RESULT_OK){
+          Log.d("getPickerPaths", "onActivityResult: READ_IMAGE RESULT_OK, set hasRequestedMediaPermissionOnce=true");
+          hasRequestedMediaPermissionOnce = true;
+
           Intent intent1 = new Intent(activity, SelectPicsActivity.class);
           intent1.putExtras(intent);
           activity.startActivityForResult(intent1, SELECT);
+        } else {
+          Log.d("getPickerPaths", "onActivityResult: READ_IMAGE result not OK, do not update hasRequestedMediaPermissionOnce");
         }
 
       }
@@ -95,7 +108,7 @@ public class ImagePickersPlugin implements FlutterPlugin,MethodChannel.MethodCal
 
     this.result = result;
     if ("getPickerPaths".equals(methodCall.method)) {
-
+      Log.d("getPickerPaths", "onMethodCall: getPickerPaths");
       String galleryMode = methodCall.argument("galleryMode");
       Boolean showGif = methodCall.argument("showGif");
       Map<String,Number> uiColor = methodCall.argument("uiColor");
@@ -132,16 +145,60 @@ public class ImagePickersPlugin implements FlutterPlugin,MethodChannel.MethodCal
       intent.putExtra(SelectPicsActivity.LANGUAGE,language);
       if(cameraMimeType != null){
         //为什么这么写？  PictureSelector中 有bug，在无任何权限情况下首次直接调用打开相机，会出现一个透明的activity
+        Log.d("getPickerPaths", "getPickerPaths: cameraMimeType != null, start PermissionActivity for CAMERA only");
         intent.putExtra(PermissionActivity.PERMISSIONS, new String[]{Manifest.permission.CAMERA});
         intent.setClass(activity,PermissionActivity.class);
         activity.startActivityForResult(intent,READ_IMAGE);
       }else{
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU){
-          intent.putExtra(PermissionActivity.PERMISSIONS, new String[]{Manifest.permission.READ_MEDIA_IMAGES
-                  ,Manifest.permission.READ_MEDIA_VIDEO});
-          intent.setClass(activity,PermissionActivity.class);
-          activity.startActivityForResult(intent,READ_IMAGE);
+          Log.d("getPickerPaths", "getPickerPaths: sdk=" + Build.VERSION.SDK_INT + " (>=33), checking media permissions");
+          // Android 13+ 先判断是否已经具备任意形式的媒体访问权限（全部或部分）。
+          int readImagesGrant = ContextCompat.checkSelfPermission(activity, Manifest.permission.READ_MEDIA_IMAGES);
+          int readVideoGrant = ContextCompat.checkSelfPermission(activity, Manifest.permission.READ_MEDIA_VIDEO);
+          boolean hasAnyMediaPermission =
+                  readImagesGrant == PackageManager.PERMISSION_GRANTED
+                          || readVideoGrant == PackageManager.PERMISSION_GRANTED;
+
+          Log.d("getPickerPaths", "getPickerPaths: READ_MEDIA_IMAGES=" + readImagesGrant + ", READ_MEDIA_VIDEO=" + readVideoGrant);
+
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            // Android 14+ 额外检查“仅选定照片/视频访问”权限。
+            int visualSelectedGrant = ContextCompat.checkSelfPermission(activity, "android.permission.READ_MEDIA_VISUAL_USER_SELECTED");
+            Log.d("getPickerPaths", "getPickerPaths: READ_MEDIA_VISUAL_USER_SELECTED=" + visualSelectedGrant);
+            hasAnyMediaPermission = hasAnyMediaPermission
+                    || visualSelectedGrant == PackageManager.PERMISSION_GRANTED;
+          }
+
+          Log.d("getPickerPaths", "getPickerPaths: hasAnyMediaPermission=" + hasAnyMediaPermission + ", hasRequestedMediaPermissionOnce=" + hasRequestedMediaPermissionOnce);
+
+          if (hasAnyMediaPermission || hasRequestedMediaPermissionOnce) {
+            // 已经有媒体访问权限（全部或部分），或者已经通过 PermissionActivity 成功申请过一次，
+            // 直接进入选择页面，避免重复弹系统“选择项目”。
+            Log.d("getPickerPaths", "getPickerPaths: go SelectPicsActivity directly (skip PermissionActivity)");
+            intent.setClass(activity,SelectPicsActivity.class);
+            activity.startActivityForResult(intent, SELECT);
+          } else {
+            // 尚未授权任何媒体权限，走 PermissionActivity 触发系统权限弹窗。
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+              Log.d("getPickerPaths", "getPickerPaths: no media permission yet, sdk>=34, start PermissionActivity with partial access support");
+              intent.putExtra(PermissionActivity.PERMISSIONS, new String[]{
+                      Manifest.permission.READ_MEDIA_IMAGES,
+                      Manifest.permission.READ_MEDIA_VIDEO,
+                      "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
+              });
+            } else {
+              Log.d("getPickerPaths", "getPickerPaths: no media permission yet, sdk=33, start PermissionActivity for READ_MEDIA_IMAGES/VIDEO");
+              intent.putExtra(PermissionActivity.PERMISSIONS, new String[]{
+                      Manifest.permission.READ_MEDIA_IMAGES,
+                      Manifest.permission.READ_MEDIA_VIDEO
+              });
+            }
+            Log.d("getPickerPaths", "getPickerPaths: start PermissionActivity (READ_IMAGE)");
+            intent.setClass(activity,PermissionActivity.class);
+            activity.startActivityForResult(intent,READ_IMAGE);
+          }
         }else{
+          Log.d("getPickerPaths", "getPickerPaths: sdk<33, go SelectPicsActivity without media permission check");
           intent.setClass(activity,SelectPicsActivity.class);
           activity.startActivityForResult(intent, SELECT);
         }
