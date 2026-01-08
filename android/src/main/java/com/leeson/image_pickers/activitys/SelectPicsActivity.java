@@ -6,13 +6,20 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.media.ThumbnailUtils;
 import android.os.Bundle;
 import android.provider.MediaStore;
 import android.util.Log;
+import android.util.DisplayMetrics;
+import android.view.View;
+import android.view.LayoutInflater;
+import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
 
 import com.leeson.image_pickers.AppPath;
 import com.leeson.image_pickers.R;
@@ -23,6 +30,7 @@ import com.leeson.image_pickers.utils.ImageCropEngine;
 import com.leeson.image_pickers.utils.MeSandboxFileEngine;
 import com.leeson.image_pickers.utils.PictureStyleUtil;
 import com.luck.picture.lib.basic.PictureSelector;
+import com.luck.picture.lib.basic.IBridgeViewLifecycle;
 import com.luck.picture.lib.basic.PictureSelectorSupporterActivity;
 import com.luck.picture.lib.basic.PictureSelectorTransparentActivity;
 import com.luck.picture.lib.config.PictureMimeType;
@@ -31,6 +39,8 @@ import com.luck.picture.lib.config.SelectModeConfig;
 import com.luck.picture.lib.dialog.RemindDialog;
 import com.luck.picture.lib.entity.LocalMedia;
 import com.luck.picture.lib.interfaces.OnResultCallbackListener;
+import com.luck.picture.lib.interfaces.OnPermissionsInterceptListener;
+import com.luck.picture.lib.interfaces.OnRequestPermissionListener;
 import com.luck.picture.lib.language.LanguageConfig;
 import com.luck.picture.lib.style.PictureSelectorStyle;
 import com.luck.picture.lib.style.SelectMainStyle;
@@ -43,6 +53,15 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.provider.Settings;
+import androidx.appcompat.app.AlertDialog;
+import androidx.core.content.ContextCompat;
+import android.widget.Button;
+import android.widget.TextView;
 
 
 /**
@@ -132,7 +151,63 @@ public class SelectPicsActivity extends BaseActivity {
         }
         return LanguageConfig.SYSTEM_LANGUAGE;
     }
+
+    private void showLimitedPhotoAccessTipIfNeeded() {
+        Log.d("getPickerPaths", "showLimitedPhotoAccessTipIfNeeded() called");
+
+        int sdkInt = android.os.Build.VERSION.SDK_INT;
+        int targetSdk = android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE;
+        Log.d("getPickerPaths", "showLimitedPhotoAccessTipIfNeeded sdkInt=" + sdkInt + ", UPSIDE_DOWN_CAKE=" + targetSdk);
+
+        if (sdkInt < targetSdk) {
+            // Android 14 以下不处理
+            Log.d("getPickerPaths", "showLimitedPhotoAccessTipIfNeeded: SDK < 34, skip dialog");
+            return;
+        }
+
+        // 是否拥有读取所有图片的权限
+        boolean hasReadImages = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_MEDIA_IMAGES
+        ) == PackageManager.PERMISSION_GRANTED;
+
+        // 是否拥有“仅选定照片访问”的权限（需要在清单中声明 READ_MEDIA_VISUAL_USER_SELECTED）
+        boolean hasVisualSelected = false;
+        try {
+            hasVisualSelected = ContextCompat.checkSelfPermission(
+                    this,
+                    "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
+            ) == PackageManager.PERMISSION_GRANTED;
+        } catch (Exception ignored) {
+            // 低版本 SDK 编译或者常量不可用时忽略
+            Log.d("getPickerPaths", "showLimitedPhotoAccessTipIfNeeded: exception when checking READ_MEDIA_VISUAL_USER_SELECTED: " + ignored);
+        }
+
+        Log.d("getPickerPaths", "showLimitedPhotoAccessTipIfNeeded: hasReadImages=" + hasReadImages + ", hasVisualSelected=" + hasVisualSelected);
+
+        // 这里的逻辑含义：如果没有 READ_MEDIA_IMAGES 但有 READ_MEDIA_VISUAL_USER_SELECTED，认为是“部分照片访问”
+        if (!hasReadImages && hasVisualSelected) {
+            Log.d("getPickerPaths", "showLimitedPhotoAccessTipIfNeeded: condition matched, showing tip dialog");
+            new AlertDialog.Builder(this)
+                    .setMessage("无法访问相册中所有照片，请在系统设置中将「照片」权限改为「所有照片」")
+                    .setPositiveButton("去设置", (dialog, which) -> {
+                        dialog.dismiss();
+                        Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                        intent.setData(Uri.fromParts("package", getPackageName(), null));
+                        startActivity(intent);
+                    })
+                    .setNegativeButton("知道了", (dialog, which) -> dialog.dismiss())
+                    .show();
+        } else {
+            Log.d("getPickerPaths", "showLimitedPhotoAccessTipIfNeeded: condition NOT matched, no dialog. hasReadImages=" + hasReadImages + ", hasVisualSelected=" + hasVisualSelected);
+        }
+    }
+
+
     private void startSel() {
+
+            showLimitedPhotoAccessTipIfNeeded();
+
 
         String mode = getIntent().getStringExtra(GALLERY_MODE);
         Map<String, Number> uiColor = (Map<String, Number>) getIntent().getSerializableExtra(UI_COLOR);
@@ -247,6 +322,31 @@ public class SelectPicsActivity extends BaseActivity {
                     .setSandboxFileEngine(new MeSandboxFileEngine())
                     .isDisplayCamera(showCamera)
                     .isGif(showGif)
+                    .setPermissionsInterceptListener(new OnPermissionsInterceptListener() {
+                        @Override
+                        public void requestPermission(
+                                Fragment fragment,
+                                String[] permissions,
+                                OnRequestPermissionListener call) {
+
+                            // 这里是关键：告诉 PictureSelector
+                            // 「权限已经由外层（Flutter + CustomPermissionHandler）处理好了，
+                            // 不要再调用系统的 requestPermissions()」。
+                            //
+                            // 所以我们直接回调“全部已授权”：
+                            call.onCall(permissions, true);
+
+                            // 如果你希望在这里再做一次自定义权限检查，
+                            // 也可以用 fragment.getActivity() + 自己的 PermissionUtil，
+                            // 检查失败时 call.onCall(permissions, false)。
+                        }
+                        @Override
+                        public boolean hasPermissions(Fragment fragment, String[] permissions) {
+                            // 同样直接返回 true，表示权限已经具备，
+                            // 这样 PictureSelector 就不会再去触发自己的权限流程。
+                            return true;
+                        }
+                    })
                     .setSelectMaxDurationSecond(videoSelectMaxSecond.intValue())
                     .setSelectMinDurationSecond(videoSelectMinSecond.intValue())
                     // .setFilterVideoMaxSecond(videoSelectMaxSecond.intValue())
@@ -260,6 +360,94 @@ public class SelectPicsActivity extends BaseActivity {
                     .setSkipCropMimeType(new String[]{PictureMimeType.ofGIF(), PictureMimeType.ofWEBP()})
                     .isPreviewImage(true)
                     .isPreviewVideo(true)
+                    .setAttachViewLifecycle(new IBridgeViewLifecycle() {
+                        @Override
+                        public void onViewCreated(Fragment fragment, View view, Bundle savedInstanceState) {
+                            // 在 PictureSelector 内部 Fragment 的视图创建完成后，再检测一次 Android 14 的“部分照片访问”状态，
+                            // 并把提示弹窗挂在相册页面所在的 Activity 上，这样弹窗就会盖在相册 UI 上显示。
+
+                            Log.d("getPickerPaths", "attachLifecycle onViewCreated called");
+
+                            if (fragment == null || fragment.getContext() == null) {
+                                Log.d("getPickerPaths", "attachLifecycle onViewCreated: fragment or context is null, skip");
+                                return;
+                            }
+
+                            int sdkInt = android.os.Build.VERSION.SDK_INT;
+                            int targetSdk = android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE;
+                            Log.d("getPickerPaths", "attachLifecycle onViewCreated sdkInt=" + sdkInt + ", UPSIDE_DOWN_CAKE=" + targetSdk);
+
+                            if (sdkInt < targetSdk) {
+                                Log.d("getPickerPaths", "attachLifecycle onViewCreated: SDK < 34, skip dialog");
+                                return;
+                            }
+
+                            android.content.Context context = fragment.getContext();
+
+                            boolean hasReadImages = ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.READ_MEDIA_IMAGES
+                            ) == PackageManager.PERMISSION_GRANTED;
+
+                            boolean hasVisualSelected = false;
+                            try {
+                                hasVisualSelected = ContextCompat.checkSelfPermission(
+                                        context,
+                                        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
+                                ) == PackageManager.PERMISSION_GRANTED;
+                            } catch (Exception e) {
+                                Log.d("getPickerPaths", "attachLifecycle onViewCreated: exception when checking READ_MEDIA_VISUAL_USER_SELECTED: " + e);
+                            }
+
+                            Log.d("getPickerPaths", "attachLifecycle onViewCreated: hasReadImages=" + hasReadImages + ", hasVisualSelected=" + hasVisualSelected);
+
+                            if (!hasReadImages && hasVisualSelected) {
+                                Log.d("getPickerPaths", "attachLifecycle onViewCreated: limited photo access detected, showing custom tip dialog");
+
+                                AlertDialog dialog = new AlertDialog.Builder(fragment.requireActivity()).create();
+                                View dialogView = LayoutInflater.from(fragment.requireActivity())
+                                        .inflate(R.layout.ps_dialog_limited_photo_access, null, false);
+
+                                TextView tvMessage = dialogView.findViewById(R.id.tv_message);
+                                Button btnNegative = dialogView.findViewById(R.id.btn_negative);
+                                Button btnPositive = dialogView.findViewById(R.id.btn_positive);
+
+                                if (tvMessage != null) {
+                                    tvMessage.setText("无法访问相册中所有照片，请在系统设置中将「照片」权限改为「所有照片」");
+                                }
+
+                                btnNegative.setOnClickListener(v -> dialog.dismiss());
+                                btnPositive.setOnClickListener(v -> {
+                                    dialog.dismiss();
+                                    Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                                    intent.setData(Uri.fromParts("package", fragment.requireActivity().getPackageName(), null));
+                                    fragment.requireActivity().startActivity(intent);
+                                });
+
+                                dialog.setView(dialogView);
+                                if (dialog.getWindow() != null) {
+                                    dialog.getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+                                }
+                                dialog.show();
+
+                                if (dialog.getWindow() != null) {
+                                    DisplayMetrics dm = new DisplayMetrics();
+                                    fragment.requireActivity().getWindowManager().getDefaultDisplay().getMetrics(dm);
+                                    WindowManager.LayoutParams params = dialog.getWindow().getAttributes();
+                                    params.width = (int) (dm.widthPixels * 0.7f);
+                                    dialog.getWindow().setAttributes(params);
+                                }
+                            } else {
+                                Log.d("getPickerPaths", "attachLifecycle onViewCreated: condition NOT matched, no dialog. hasReadImages=" + hasReadImages + ", hasVisualSelected=" + hasVisualSelected);
+                            }
+                        }
+
+                        @Override
+                        public void onDestroy(Fragment fragment) {
+                            // 这里目前不需要额外处理，仅保留方法以满足接口要求。
+                            Log.d("getPickerPaths", "attachLifecycle onDestroy called");
+                        }
+                    })
                     .forResult(new OnResultCallbackListener<LocalMedia>() {
                         @Override
                         public void onResult(ArrayList<LocalMedia> result) {
