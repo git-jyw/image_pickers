@@ -1,11 +1,13 @@
 package com.leeson.image_pickers.activitys;
 
+import android.Manifest;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
+import android.util.Log;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,6 +25,8 @@ import androidx.core.content.ContextCompat;
  */
 @SuppressWarnings("all")
 public abstract class BaseActivity extends AppCompatActivity {
+
+    private static final String TAG = "getPickerPaths";
 
     private int REQUEST_CODE_PERMISSION = 0x00001;
 
@@ -50,13 +54,35 @@ public abstract class BaseActivity extends AppCompatActivity {
      */
     private boolean checkPermissions(String[] permissions) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            Log.d(TAG, "checkPermissions: sdk<23, treat as granted");
             return true;
         }
         for (String permission : permissions) {
-            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+            int grant = ContextCompat.checkSelfPermission(this, permission);
+            Log.d(TAG, "checkPermissions: permission=" + permission + ", grant=" + grant + ", sdk=" + Build.VERSION.SDK_INT);
+            if (grant != PackageManager.PERMISSION_GRANTED) {
+                // Android 14+ 部分照片/视频访问兼容：
+                // 如果应用已经拥有 READ_MEDIA_VISUAL_USER_SELECTED 权限，
+                // 即便 READ_MEDIA_IMAGES/READ_MEDIA_VIDEO 自身未完全授权，也视为已具备访问选定媒体的能力。
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+                        && (Manifest.permission.READ_MEDIA_IMAGES.equals(permission)
+                        || Manifest.permission.READ_MEDIA_VIDEO.equals(permission))) {
+                    int visualSelectedGrant = ContextCompat.checkSelfPermission(
+                            this,
+                            "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"
+                    );
+                    Log.d(TAG, "checkPermissions: visual_selected grant=" + visualSelectedGrant);
+                    if (visualSelectedGrant == PackageManager.PERMISSION_GRANTED) {
+                        // 将“仅选定照片/视频访问”视为已授权，继续检查其它权限。
+                        Log.d(TAG, "checkPermissions: treat partial access as granted for " + permission);
+                        continue;
+                    }
+                }
+                Log.d(TAG, "checkPermissions: deny because permission not granted and no partial override: " + permission);
                 return false;
             }
         }
+        Log.d(TAG, "checkPermissions: all granted");
         return true;
     }
 
@@ -90,7 +116,11 @@ public abstract class BaseActivity extends AppCompatActivity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_CODE_PERMISSION) {
-            if (verifyPermissions(grantResults)) {
+            // 这里改为再次基于当前权限状态进行判断，
+            // 以便在 Android 14+ 上正确识别“部分照片/视频访问”场景。
+            boolean ok = checkPermissions(permissions);
+            Log.d(TAG, "onRequestPermissionsResult: requestCode=" + requestCode + ", ok=" + ok);
+            if (ok) {
                 permissionSuccess(REQUEST_CODE_PERMISSION);
             } else {
                 for (int i = 0; i < permissions.length; i++) {
