@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/ps_top_tip_bar_root"
+    android:layout_width="match_parent"
+    android:layout_height="48dp"
+    android:background="#FFF2AA69"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingLeft="16dp"
+    android:paddingRight="16dp">
+
+    <TextView
+        android:id="@+id/tv_top_tip"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="🔔 当前仅部分照片可选，选择更多照片点击这里"
+        android:textColor="#FFFFFFFF"
+        android:textSize="14sp" />
+
+    <ImageView
+        android:id="@+id/iv_tip_arrow"
+        android:layout_width="16dp"
+        android:layout_height="16dp"
+        android:layout_marginLeft="8dp"
+        android:src="@drawable/arrow" />
+
+</LinearLayout>
