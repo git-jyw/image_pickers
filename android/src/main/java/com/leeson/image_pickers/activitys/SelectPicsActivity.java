@@ -206,7 +206,7 @@ public class SelectPicsActivity extends BaseActivity {
 
     private void startSel() {
 
-            showLimitedPhotoAccessTipIfNeeded();
+            // showLimitedPhotoAccessTipIfNeeded();
 
 
         String mode = getIntent().getStringExtra(GALLERY_MODE);
