@@ -463,11 +463,11 @@ public class SelectPicsActivity extends BaseActivity {
                                                 }
                                             } else {
                                                 // 兜底：未找到特定锚点时，直接添加到根布局
-                                                rootView.addView(tipBar);
+                                                // rootView.addView(tipBar);
                                             }
                                         } else {
                                             // 根布局不是 ConstraintLayout 时的兜底处理
-                                            rootView.addView(tipBar);
+                                            // rootView.addView(tipBar);
                                         }
                                     }
                                 }
