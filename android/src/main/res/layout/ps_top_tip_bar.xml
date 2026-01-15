@@ -15,7 +15,7 @@
         android:layout_height="wrap_content"
         android:layout_weight="1"
         android:text="🔔 当前仅部分照片可选，选择更多照片点击这里"
-        android:textColor="#FFFFFFFF"
+        android:textColor="#FF000000"
         android:textSize="14sp" />
 
     <ImageView
