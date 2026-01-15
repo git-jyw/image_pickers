@@ -3,7 +3,7 @@
     android:id="@+id/ps_top_tip_bar_root"
     android:layout_width="match_parent"
     android:layout_height="48dp"
-    android:background="#FFF2AA69"
+    android:background="#FFFFE6CB"
     android:gravity="center_vertical"
     android:orientation="horizontal"
     android:paddingLeft="16dp"
