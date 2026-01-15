@@ -354,7 +354,7 @@ public class SelectPicsActivity extends BaseActivity {
                                 // 这里用你自己的最大秒数判断（你说的是 videoRecordMaxSecond）
                                 // 请选择5分钟以内的视频哦～
                                 String msg = "请选择"
-                                            + videoRecordMaxSecond.intValue() + "分钟以内的视频哦~";
+                                            + durationSec.intValue() + "分钟以内的视频哦~";
                                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show();
                                 // 返回 true：表示我们已经自定义提示，PictureSelector 不再弹默认提示
                                 return true;
