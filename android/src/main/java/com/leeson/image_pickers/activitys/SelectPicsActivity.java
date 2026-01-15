@@ -348,7 +348,7 @@ public class SelectPicsActivity extends BaseActivity {
 
                             // 2. 针对“视频时长超过最大值”的提示
                             if (limitType == 8) {
-                                int maxMinutes = videoRecordMaxSecond.intValue() / 60;
+                                int maxMinutes = videoSelectMaxSecond.intValue() / 60;
                                 String msg = "请选择" + maxMinutes + "分钟以内的视频哦~";
                                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show();
                                 // 返回 true：表示我们已经自定义提示，PictureSelector 不再弹默认提示
